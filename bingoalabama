@@ -18,10 +18,7 @@ contact_links:s & Support Requests
 @@ -0,0 +1,31 @@
 name: "Gateway Contracts Issue"
   - name: Questions & Support Requests
-    url: https://community.zama.ai
-    about: Ask in - name: Questions & Support Requests
-    url: https://community.zama.ai
-    about: Ask in the Zama community forum
+    
 @@ -0,0 +1,31 @@
 name: "Gateway Contracts Issue"
 description: File any issue related to the gateway-contracts component
@@ -71,7 +68,10 @@ labels: ["gateway-contracts"]
 name: "Gateway Contracts Issue"
   - type: textarea
     id: steps
-.venv/
+url: https://community.zama.ai
+    about: Ask in - name: Questions & Support Requests
+    url: https://community.zama.ai
+    about: Ask in the Zama community forum
 __pycache__/
 *.pyc
 rustbpe/target/
