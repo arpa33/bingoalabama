@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+
+"""
+Orvyn
+-----
+A professional GitHub repository builder.
+
+Features:
+- Create a GitHub repository through the GitHub API
+- Create the repository locally
+- Initialize Git
+- Generate README.md
+- Generate .gitignore
+- Generate LICENSE
+- Create an initial commit
+- Connect local repository to GitHub
+- Push the initial branch
+- Supports public/private repositories
+- Supports organization repositories
+- No third-party Python dependencies
+
+Requirements:
+    Python 3.10+
+    Git installed and available in PATH
+
+Environment:
+    GITHUB_TOKEN=<your_personal_access_token>
+
+Examples:
+    python orvyn.py create my-project
+    python orvyn.py create my-project --private
+    python orvyn.py create my-project --description "My project"
+    python orvyn.py create my-project --org my-organization
+    python orvyn.py create my-project --branch main
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Optional
+
+
+APP_NAME = "Orvyn"
+APP_VERSION = "1.0.0"
+GITHUB_API = "https://api.github.com"
+
+
+# ---------------------------------------------------------
+# Terminal UI
+# ---------------------------------------------------------
+
+class UI:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    GREEN = "\033[92m"
+    RED = "\033[91m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    CYAN = "\033[96m"
+
+    @classmethod
+    def info(cls, message: str) -> None:
+        print(f"{cls.BLUE}[*]{cls.RESET} {message}")
+
+    @classmethod
+    def success(cls, message: str) -> None:
+        print(f"{cls.GREEN}[+]{cls.RESET} {message}")
+
+    @classmethod
+    def warning(cls, message: str) -> None:
+        print(f"{cls.YELLOW}[!]{cls.RESET} {message}")
+
+    @classmethod
+    def error(cls, message: str) -> None:
+        print(f"{cls.RED}[x]{cls.RESET} {message}")
+
+    @classmethod
+    def title(cls) -> None:
+        print()
+        print(f"{cls.CYAN}{cls.BOLD}")
+        print("   ____                     ")
+        print("  / __ \\____  ________  __")
+        print(" / / / / __ \\/ ___/ _ \\/ /")
+        print("/ /_/ / /_/ / /  /  __/ / ")
+        print("\\____/\\____/_/   \\___/_/  ")
+        print(f"{cls.RESET}")
+        print(f"{cls.BOLD}{APP_NAME} GitHub Repository Builder v{APP_VERSION}{cls.RESET}")
+        print()
+
+
+# ---------------------------------------------------------
+# Git utilities
+# ---------------------------------------------------------
+
+def command_exists(command: str) -> bool:
+    return shutil.which(command) is not None
+
+
+def run(
+    command: list[str],
+    cwd: Optional[Path] = None,
+    capture: bool = False,
+) -> subprocess.CompletedProcess:
+    """
+    Execute a shell command safely without shell=True.
+    """
+    try:
+        return subprocess.run(
+            command,
+            cwd=cwd,
+            check=True,
+            text=True,
+            capture_output=capture,
+        )
+    except subprocess.CalledProcessError as exc:
+        output = exc.stderr.strip() if exc.stderr else str(exc)
+        raise RuntimeError(
+            f"Command failed: {' '.join(command)}\n{output}"
+        ) from exc
+
+
+def ensure_git() -> None:
+    if not command_exists("git"):
+        raise RuntimeError(
+            "Git was not found in PATH. Install Git before using Orvyn."
+        )
+
+
+# ---------------------------------------------------------
+# GitHub API
+# ---------------------------------------------------------
+
+class GitHubClient:
+    def __init__(self, token: str):
+        self.token = token.strip()
+
+        if not self.token:
+            raise ValueError("GitHub token cannot be empty.")
+
+    def request(
+        self,
+        method: str,
+        endpoint: str,
+        payload: Optional[dict] = None,
+    ) -> dict:
+
+        url = (
+            endpoint
+            if endpoint.startswith("http")
+            else f"{GITHUB_API}{endpoint}"
+        )
+
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {self.token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": APP_NAME,
+        }
+
+        data = None
+
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+
+        request = urllib.request.Request(
+            url=url,
+            data=data,
+            headers=headers,
+            method=method.upper(),
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                body = response.read().decode("utf-8")
+
+                if not body:
+                    return {}
+
+                return json.loads(body)
+
+        except urllib.error.HTTPError as exc:
+            try:
+                body = exc.read().decode("utf-8")
+                error_data = json.loads(body)
+                message = error_data.get("message", body)
+            except Exception:
+                message = str(exc)
+
+            raise RuntimeError(
+                f"GitHub API error ({exc.code}): {message}"
+            ) from exc
+
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"Unable to connect to GitHub: {exc.reason}"
+            ) from exc
+
+    def get_authenticated_user(self) -> dict:
+        return self.request("GET", "/user")
+
+    def create_repository(
+        self,
+        name: str,
+        description: str,
+        private: bool,
+        organization: Optional[str] = None,
+    ) -> dict:
+
+        payload = {
+            "name": name,
+            "description": description,
+            "private": private,
+            "has_issues": True,
+            "has_projects": True,
+            "has_wiki": True,
+            "auto_init": False,
+        }
+
+        if organization:
+            endpoint = f"/orgs/{organization}/repos"
+        else:
+            endpoint = "/user/repos"
+
+        return self.request(
+            "POST",
+            endpoint,
+            payload,
+        )
+
+
+# ---------------------------------------------------------
+# Project templates
+# ---------------------------------------------------------
+
+def generate_readme(
+    name: str,
+    description: str,
+    clone_url: str,
+) -> str:
+
+    return f"""# {name}
+
+{description or "A modern software project created with Orvyn."}
+
+## Overview
+
+{name} is a clean and maintainable project scaffold designed for modern development workflows.
+
+## Features
+
+- Clean project structure
+- Git-ready workflow
+- GitHub integration
+- Developer-friendly documentation
+- Easy local setup
+- Production-ready foundation
+
+## Getting Started
+
+Clone the repository:
+
+```bash
+git clone {clone_url}
+cd {name}
